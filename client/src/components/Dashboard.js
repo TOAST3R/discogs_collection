@@ -1,228 +1,111 @@
-import React from 'react';
-import { Pie, Bar, Line } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  ArcElement,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  Title,
-  Tooltip,
-  Legend
-} from 'chart.js';
+import React, { useMemo, useState } from 'react';
+import { Bar } from 'react-chartjs-2';
+import { sortEntries, timelineData, timelineOptions, yearSeries } from './chart-config';
+import LabelExplorer from './LabelExplorer';
+import RankedBars from './RankedBars';
+import './Dashboard.css';
 
-ChartJS.register(
-  ArcElement,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  Title,
-  Tooltip,
-  Legend
-);
+function Dashboard({ stats }) {
+  const [timelineMode, setTimelineMode] = useState('years');
 
-function Dashboard({ stats, username }) {
-  const getTopEntries = (obj, count = 10) => {
-    return Object.entries(obj)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, count);
-  };
+  const styles = useMemo(() => sortEntries(stats.styles), [stats]);
+  const genres = useMemo(() => sortEntries(stats.genres), [stats]);
+  const formats = useMemo(() => sortEntries(stats.formats), [stats]);
+  const artists = useMemo(() => sortEntries(stats.artists), [stats]);
+  const labels = useMemo(() => sortEntries(stats.labels), [stats]);
 
-  const genresData = {
-    labels: getTopEntries(stats.genres, 8).map(e => e[0]),
-    datasets: [
-      {
-        data: getTopEntries(stats.genres, 8).map(e => e[1]),
-        backgroundColor: [
-          '#e94560',
-          '#4ecdc4',
-          '#ffe66d',
-          '#ff6b6b',
-          '#4ecdc4',
-          '#95e1d3',
-          '#f38181',
-          '#aa96da'
-        ],
-        borderColor: 'rgba(255, 255, 255, 0.2)',
-        borderWidth: 2
-      }
-    ]
-  };
+  const years = useMemo(() => yearSeries(stats.years), [stats]);
+  const decades = useMemo(() => {
+    const keys = Object.keys(stats.decades || {}).sort();
+    return { labels: keys, values: keys.map(key => stats.decades[key]) };
+  }, [stats]);
 
-  const formatsData = {
-    labels: getTopEntries(stats.formats, 6).map(e => e[0]),
-    datasets: [
-      {
-        label: 'Count',
-        data: getTopEntries(stats.formats, 6).map(e => e[1]),
-        backgroundColor: [
-          'rgba(233, 69, 96, 0.8)',
-          'rgba(78, 205, 196, 0.8)',
-          'rgba(255, 230, 109, 0.8)',
-          'rgba(255, 107, 107, 0.8)',
-          'rgba(170, 150, 218, 0.8)',
-          'rgba(149, 225, 211, 0.8)'
-        ],
-        borderRadius: 8
-      }
-    ]
-  };
+  const yearSpan = years.labels.length > 0
+    ? `${years.labels[0]}–${years.labels[years.labels.length - 1]}`
+    : '—';
+  const busiestYear = years.values.length > 0
+    ? years.labels[years.values.indexOf(Math.max(...years.values))]
+    : null;
 
-  const decadesData = {
-    labels: Object.keys(stats.decades).sort(),
-    datasets: [
-      {
-        label: 'Releases',
-        data: Object.keys(stats.decades).sort().map(k => stats.decades[k]),
-        borderColor: '#4ecdc4',
-        backgroundColor: 'rgba(78, 205, 196, 0.2)',
-        fill: true,
-        tension: 0.4,
-        pointBackgroundColor: '#e94560',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointRadius: 5
-      }
-    ]
-  };
+  const kpis = [
+    { label: 'Releases', value: stats.total },
+    { label: 'Artists', value: artists.length },
+    { label: 'Labels', value: labels.length },
+    { label: 'Years', value: yearSpan, note: busiestYear && `peak ${busiestYear}` },
+  ];
 
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: true,
-    plugins: {
-      legend: {
-        labels: {
-          color: '#f5f5f5',
-          font: { size: 12, family: 'Segoe UI' },
-          padding: 15
-        }
-      },
-      tooltip: {
-        backgroundColor: 'rgba(15, 15, 26, 0.95)',
-        titleColor: '#e94560',
-        bodyColor: '#f5f5f5',
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        borderWidth: 1,
-        padding: 12,
-        cornerRadius: 8
-      }
-    },
-    scales: {
-      x: {
-        ticks: { color: '#f5f5f5' },
-        grid: { color: 'rgba(255, 255, 255, 0.05)' }
-      },
-      y: {
-        ticks: { color: '#f5f5f5' },
-        grid: { color: 'rgba(255, 255, 255, 0.05)' }
-      }
-    }
-  };
-
-  const pieOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'right',
-        labels: {
-          color: '#f5f5f5',
-          font: { size: 12 },
-          padding: 15
-        }
-      }
-    }
-  };
-
-  const topArtists = getTopEntries(stats.artists, 10);
-  const topLabels = getTopEntries(stats.labels, 10);
+  const timeline = timelineMode === 'years' ? years : decades;
 
   return (
     <div className="dashboard">
-      <div className="stats-overview">
-        <div className="stat-card">
-          <div className="stat-icon">💿</div>
-          <div className="stat-info">
-            <div className="stat-value">{stats.total}</div>
-            <div className="stat-label">Total Releases</div>
+      <section className="kpi-row">
+        {kpis.map(({ label, value, note }) => (
+          <div key={label} className="kpi">
+            <div className="kpi-label">{label}</div>
+            <div className="kpi-value">{value}</div>
+            {note && <div className="kpi-note">{note}</div>}
           </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">🎵</div>
-          <div className="stat-info">
-            <div className="stat-value">{Object.keys(stats.genres).length}</div>
-            <div className="stat-label">Genres</div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">🎤</div>
-          <div className="stat-info">
-            <div className="stat-value">{Object.keys(stats.artists).length}</div>
-            <div className="stat-label">Artists</div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">🏷️</div>
-          <div className="stat-info">
-            <div className="stat-value">{Object.keys(stats.labels).length}</div>
-            <div className="stat-label">Labels</div>
-          </div>
-        </div>
-      </div>
+        ))}
+      </section>
 
-      <div className="charts-grid">
-        <div className="chart-card">
-          <h3>Genres Distribution</h3>
-          <div className="chart-container">
-            <Pie data={genresData} options={pieOptions} />
-          </div>
-        </div>
-
-        <div className="chart-card">
-          <h3>Formats</h3>
-          <div className="chart-container">
-            <Bar data={formatsData} options={chartOptions} />
-          </div>
-        </div>
-
-        <div className="chart-card full-width">
-          <h3>Timeline by Decade</h3>
-          <div className="chart-container">
-            <Line data={decadesData} options={chartOptions} />
-          </div>
-        </div>
-      </div>
-
-      <div className="top-lists">
-        <div className="top-list">
-          <h3>Top Artists</h3>
-          <ul>
-            {topArtists.map(([artist, count], i) => (
-              <li key={artist}>
-                <span className="rank">#{i + 1}</span>
-                <span className="name">{artist}</span>
-                <span className="count">{count}</span>
-              </li>
+      <section className="panel">
+        <div className="panel-header">
+          <h3>Release years</h3>
+          <div className="segmented" role="group" aria-label="Timeline granularity">
+            {['years', 'decades'].map(mode => (
+              <button
+                key={mode}
+                type="button"
+                className={timelineMode === mode ? 'active' : ''}
+                onClick={() => setTimelineMode(mode)}
+              >
+                {mode === 'years' ? 'Year' : 'Decade'}
+              </button>
             ))}
-          </ul>
+          </div>
+        </div>
+        <div className="timeline-chart">
+          <Bar data={timelineData(timeline)} options={timelineOptions()} />
+        </div>
+      </section>
+
+      <LabelExplorer
+        labels={labels}
+        labelDetails={stats.labelDetails || {}}
+        total={stats.total}
+      />
+
+      <section className="panel-grid">
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Styles</h3>
+            <span className="panel-meta">{styles.length} styles</span>
+          </div>
+          <RankedBars entries={styles} total={stats.total} limit={12} />
         </div>
 
-        <div className="top-list">
-          <h3>Top Labels</h3>
-          <ul>
-            {topLabels.map(([label, count], i) => (
-              <li key={label}>
-                <span className="rank">#{i + 1}</span>
-                <span className="name">{label}</span>
-                <span className="count">{count}</span>
-              </li>
-            ))}
-          </ul>
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Top artists</h3>
+            <span className="panel-meta">{artists.length} artists</span>
+          </div>
+          <RankedBars entries={artists} total={stats.total} limit={12} />
         </div>
-      </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Genres</h3>
+          </div>
+          <RankedBars entries={genres} total={stats.total} limit={8} />
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Formats</h3>
+          </div>
+          <RankedBars entries={formats} total={stats.total} limit={8} />
+        </div>
+      </section>
     </div>
   );
 }

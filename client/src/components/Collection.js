@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import './Collection.css';
 
@@ -11,7 +12,8 @@ function Collection({ username, onRefreshed }) {
   const [loading, setLoading] = useState(true);
   const [totalItems, setTotalItems] = useState(0);
   const [selectedFormat, setSelectedFormat] = useState('All');
-  const [selectedLabel, setSelectedLabel] = useState(ALL_LABELS);
+  const [searchParams] = useSearchParams();
+  const [selectedLabel, setSelectedLabel] = useState(searchParams.get('label') || ALL_LABELS);
   const [sortBy, setSortBy] = useState('added');
   const [searchQuery, setSearchQuery] = useState('');
 

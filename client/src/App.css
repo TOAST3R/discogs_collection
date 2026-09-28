@@ -12,6 +12,14 @@
   --dark: #0f0f1a;
   --success: #4ecdc4;
   --warning: #ffe66d;
+  --series-1: #3987e5;
+  --surface-card: rgba(255, 255, 255, 0.03);
+  --surface-hover: rgba(255, 255, 255, 0.05);
+  --surface-selected: rgba(57, 135, 229, 0.14);
+  --track: rgba(255, 255, 255, 0.06);
+  --hairline: rgba(255, 255, 255, 0.1);
+  --text-secondary: #c3c2b7;
+  --text-muted: #9a988f;
 }
 
 body {
@@ -233,4 +241,25 @@ body {
 .pagination button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@media (max-width: 700px) {
+  .header {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .header-nav {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .nav-link {
+    padding: 6px 8px;
+  }
+
+  .main {
+    padding: 16px;
+  }
 }

@@ -1,4 +1,7 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// TLS verification is disabled only for local dev (e.g. behind an intercepting proxy)
+if (!process.env.VERCEL) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
 const express = require('express');
 const cors = require('cors');
 const { Client } = require('disconnect');
@@ -20,7 +23,10 @@ const discogs = new Client({
 
 // Cache full-list fetches for a day per user; persisted to disk so it survives restarts
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const CACHE_FILE = path.join(__dirname, '../.cache/discogs-cache.json');
+// Vercel's filesystem is read-only apart from /tmp, which lives only as long as the instance
+const CACHE_FILE = process.env.VERCEL
+  ? '/tmp/discogs-cache.json'
+  : path.join(__dirname, '../.cache/discogs-cache.json');
 const cache = new Map();
 
 function loadCacheFromDisk() {
@@ -173,55 +179,94 @@ app.get('/api/wantlist/:username', async (req, res) => {
   }
 });
 
+const TOP_LABEL_DETAILS = 40;
+
+function increment(counts, key) {
+  counts[key] = (counts[key] || 0) + 1;
+}
+
+// Distinct names only, so a release listing the same label/artist twice counts once
+function uniqueNames(items) {
+  return [...new Set((items || []).map(item => item.name).filter(Boolean))];
+}
+
+function buildStats(releases) {
+  const stats = {
+    total: releases.length,
+    genres: {},
+    styles: {},
+    formats: {},
+    decades: {},
+    years: {},
+    artists: {},
+    labels: {},
+    labelDetails: {},
+  };
+  const byLabel = {};
+
+  releases.forEach(release => {
+    const info = release.basic_information;
+
+    new Set(info.formats?.map(format => format.name || 'Unknown')).forEach(name => {
+      increment(stats.formats, name);
+    });
+    new Set(info.genres).forEach(genre => increment(stats.genres, genre));
+    new Set(info.styles).forEach(style => increment(stats.styles, style));
+    uniqueNames(info.artists).forEach(name => increment(stats.artists, name));
+
+    if (info.year) {
+      increment(stats.years, info.year);
+      increment(stats.decades, `${Math.floor(info.year / 10) * 10}s`);
+    }
+
+    uniqueNames(info.labels).forEach(name => {
+      increment(stats.labels, name);
+      (byLabel[name] = byLabel[name] || []).push(release);
+    });
+  });
+
+  // Detailed breakdowns only for the biggest labels to keep the payload small
+  Object.entries(stats.labels)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, TOP_LABEL_DETAILS)
+    .forEach(([name]) => {
+      const detail = { styles: {}, formats: {}, artists: {}, years: {}, releases: [] };
+      byLabel[name].forEach(release => {
+        const info = release.basic_information;
+        new Set(info.styles?.length ? info.styles : info.genres).forEach(style => {
+          increment(detail.styles, style);
+        });
+        new Set(info.formats?.map(format => format.name || 'Unknown')).forEach(format => {
+          increment(detail.formats, format);
+        });
+        uniqueNames(info.artists).forEach(artist => increment(detail.artists, artist));
+        if (info.year) {
+          increment(detail.years, info.year);
+        }
+        detail.releases.push({
+          id: release.id,
+          instanceId: release.instance_id,
+          title: info.title,
+          artist: uniqueNames(info.artists).join(', '),
+          year: info.year || null,
+          catno: info.labels?.find(label => label.name === name)?.catno || null,
+          thumb: info.thumb || null,
+        });
+      });
+      stats.labelDetails[name] = detail;
+    });
+
+  return stats;
+}
+
 app.get('/api/stats/:username', async (req, res) => {
   const { username } = req.params;
-  
+
   try {
     const releases = await getAllCollectionReleases(username, req.query.refresh === 'true');
-
-    const stats = {
-      total: releases.length,
-      genres: {},
-      formats: {},
-      decades: {},
-      artists: {},
-      labels: {}
-    };
-    
-    releases.forEach(release => {
-      const basicInfo = release.basic_information;
-      
-      basicInfo.formats?.forEach(format => {
-        const name = format.name || 'Unknown';
-        stats.formats[name] = (stats.formats[name] || 0) + 1;
-      });
-      
-      basicInfo.genres?.forEach(genre => {
-        stats.genres[genre] = (stats.genres[genre] || 0) + 1;
-      });
-      
-      basicInfo.styles?.forEach(style => {
-        stats.genres[style] = (stats.genres[style] || 0) + 1;
-      });
-      
-      basicInfo.artists?.forEach(artist => {
-        const name = artist.name;
-        stats.artists[name] = (stats.artists[name] || 0) + 1;
-      });
-      
-      basicInfo.labels?.forEach(label => {
-        const name = label.name;
-        stats.labels[name] = (stats.labels[name] || 0) + 1;
-      });
-      
-      if (basicInfo.year) {
-        const decade = Math.floor(basicInfo.year / 10) * 10;
-        stats.decades[`${decade}s`] = (stats.decades[`${decade}s`] || 0) + 1;
-      }
-    });
-    
-    res.json(stats);
+    res.json(buildStats(releases));
   } catch (error) {
+    console.error('Failed to build stats:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -241,6 +286,11 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/build/index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Imported as a serverless handler on Vercel (api/index.js); listens when run directly
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;
